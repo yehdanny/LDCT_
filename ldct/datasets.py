@@ -150,9 +150,26 @@ class Hospital3mmDataset(Dataset):
 
 
 class Clinical1mmDataset(Dataset):
-    """Dataset for 1mm JPG images with annotation provided in an XML file."""
+    """Dataset for 1 mm JPG images with per-patient ``annotations.xml`` files.
 
-    def __init__(self, root_dir: str, annotation_xml: str, transform=None) -> None:
+    The expected directory layout is::
+
+        root_dir/
+            patient_1/
+                annotations.xml
+                images/
+                    image_001.jpg
+                    ...
+            patient_2/
+                annotations.xml
+                images/
+                    image_001.jpg
+                    ...
+
+    Only boxes labelled ``Nodule`` are returned.
+    """
+
+    def __init__(self, root_dir: str, transform=None) -> None:
         if Image is None:
             raise ImportError("Pillow is required for reading JPG images")
 
@@ -160,30 +177,38 @@ class Clinical1mmDataset(Dataset):
         self.transform = transform
         self.items: List[Tuple[str, List[Tuple[float, float, float, float]]]] = []
 
-        tree = ET.parse(annotation_xml)
-        root = tree.getroot()
-        for image in root.iter("image"):
-            name = image.attrib["name"]
-            boxes: List[Tuple[float, float, float, float]] = []
-            for box in image.iter("box"):
-                if box.attrib.get("label", "").lower() != "nodule":
-                    continue
-                boxes.append(
-                    (
-                        float(box.attrib["xtl"]),
-                        float(box.attrib["ytl"]),
-                        float(box.attrib["xbr"]),
-                        float(box.attrib["ybr"]),
+        # Iterate over patient folders
+        for patient in sorted(os.listdir(root_dir)):
+            patient_dir = os.path.join(root_dir, patient)
+            if not os.path.isdir(patient_dir):
+                continue
+            xml_path = os.path.join(patient_dir, "annotations.xml")
+            if not os.path.exists(xml_path):
+                continue
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+            for image in root.iter("image"):
+                name = image.attrib["name"]
+                boxes: List[Tuple[float, float, float, float]] = []
+                for box in image.iter("box"):
+                    if box.attrib.get("label", "").lower() != "nodule":
+                        continue
+                    boxes.append(
+                        (
+                            float(box.attrib["xtl"]),
+                            float(box.attrib["ytl"]),
+                            float(box.attrib["xbr"]),
+                            float(box.attrib["ybr"]),
+                        )
                     )
-                )
-            self.items.append((name, boxes))
+                img_path = os.path.join(patient_dir, "images", name)
+                self.items.append((img_path, boxes))
 
     def __len__(self) -> int:  # pragma: no cover
         return len(self.items)
 
     def __getitem__(self, idx: int):
-        name, boxes = self.items[idx]
-        path = os.path.join(self.root_dir, name)
+        path, boxes = self.items[idx]
         image = np.array(Image.open(path).convert("L"))
         target = {
             "boxes": torch.tensor(boxes, dtype=torch.float32),

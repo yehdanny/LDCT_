@@ -19,8 +19,34 @@ regularization and hyperparameter tuning to reach production-level performance.
 
 ```
 ldct/
-  datasets.py  # Dataset loaders for the three data sources
+ datasets.py  # Dataset loaders for the three data sources
   train.py     # Example training pipeline
+```
+
+## Dataset Layouts
+
+The code assumes the following directory structures:
+
+```
+LUNA16/
+  *.mhd
+  *.raw
+
+3mm/
+  patient_ID_1/
+    *.dicom
+  patient_ID_2/
+    *.dicom
+
+1mm/
+  patient_ID_1/
+    annotations.xml
+    images/
+      *.jpg
+  patient_ID_2/
+    annotations.xml
+    images/
+      *.jpg
 ```
 
 ## Usage
@@ -39,8 +65,7 @@ python -m ldct.train \
   --luna16-csv /path/to/luna16/annotations.csv \
   --hospital-root /path/to/3mm/dicom_root \
   --hospital-csv /path/to/hospital_annotations.csv \
-  --clinical-root /path/to/1mm/images \
-  --clinical-xml /path/to/annotations.xml \
+  --clinical-root /path/to/1mm/root \
   --pretrain-epochs 5 --ft-epochs 5
 ```
 

@@ -97,7 +97,7 @@ def main(args: argparse.Namespace) -> None:
         print(f"Hospital epoch {epoch+1}: loss={loss:.4f}")
 
     # Stage 3: evaluation on 1mm clinical dataset
-    clinical_ds = Clinical1mmDataset(args.clinical_root, args.clinical_xml)
+    clinical_ds = Clinical1mmDataset(args.clinical_root)
     clinical_loader = DataLoader(clinical_ds, batch_size=1, shuffle=False, collate_fn=collate_fn)
 
     recall = evaluate_recall(model, clinical_loader, device)
@@ -115,8 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--luna16-csv", required=True, help="CSV annotations for LUNA16")
     parser.add_argument("--hospital-root", required=True, help="Root directory for 3mm DICOMs")
     parser.add_argument("--hospital-csv", required=True, help="Annotation CSV for 3mm dataset")
-    parser.add_argument("--clinical-root", required=True, help="Root directory for 1mm JPG images")
-    parser.add_argument("--clinical-xml", required=True, help="XML annotations for 1mm dataset")
+    parser.add_argument("--clinical-root", required=True, help="Root directory for 1mm patient folders")
     parser.add_argument("--pretrain-epochs", type=int, default=1)
     parser.add_argument("--ft-epochs", type=int, default=1)
     main(parser.parse_args())
