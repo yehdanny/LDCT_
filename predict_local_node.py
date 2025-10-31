@@ -1,14 +1,14 @@
-from log import logger
+#from log import #logger
 import os
 import sys
 import numpy as np
 import SimpleITK as sitk
 import pydicom
-import dcmtrans
+#import dcmtrans
 import cv2
 import time
 import concurrent.futures
-from lungmask import LMInferer
+#from lungmask import LMInferer
 
 # TensorFlow/Keras imports for ResUNet model
 from tensorflow.keras.models import Model
@@ -40,6 +40,13 @@ MAX_Z_GAP = 1
 MIN_SLICE_LEN = 2
 MIN_AREA_PX = 5 * 5
 KEEP_TOPK_PER_SLICE = None
+# TensorFlow GPU 檢測
+import tensorflow as tf
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    print(f"TensorFlow 已偵測到 {len(gpus)} 個 GPU：{gpus}")
+else:
+    print("TensorFlow 未偵測到 GPU，模型將運行在 CPU 上。")
 
 # ResUNet model functions
 def load_dicom_series(series_dir):
@@ -57,7 +64,8 @@ def load_dicom_series(series_dir):
         # 檢查檔案是否存在
         for file_path in series_files:
             if not os.path.exists(file_path):
-                logger.warning(f"DICOM 檔案不存在: {file_path}")
+                #logger.warning(f"DICOM 檔案不存在: {file_path}")
+                pass
         
         reader = sitk.ImageSeriesReader()
         reader.SetFileNames(series_files)
@@ -68,14 +76,14 @@ def load_dicom_series(series_dir):
         return ct, origin, spacing
         
     except Exception as e:
-        logger.error(f"SimpleITK 讀取失敗: {e}")
+        #logger.error(f"SimpleITK 讀取失敗: {e}")
         
         # 方法2: 使用 pydicom 備用讀取方式
         try:
-            logger.info("嘗試使用 pydicom 備用讀取方式")
+            #logger.info("嘗試使用 pydicom 備用讀取方式")
             return load_dicom_series_pydicom(series_dir)
         except Exception as e2:
-            logger.error(f"pydicom 備用讀取也失敗: {e2}")
+            #logger.error(f"pydicom 備用讀取也失敗: {e2}")
             raise RuntimeError(f"無法讀取 DICOM series: {series_dir}. 錯誤: {e}")
 
 def load_dicom_series_pydicom(series_dir):
@@ -103,7 +111,7 @@ def load_dicom_series_pydicom(series_dir):
             ds = pydicom.dcmread(file_path, force=True)
             datasets.append((ds, file_path))
         except Exception as e:
-            logger.warning(f"無法讀取檔案 {file_path}: {e}")
+            #logger.warning(f"無法讀取檔案 {file_path}: {e}")
             continue
     
     if not datasets:
@@ -270,12 +278,12 @@ def get_model_path():
     ]
     
     for path in possible_paths:
-        logger.info(f'檢查 ResUNet 模型路徑: {path}')
+        #logger.info(f'檢查 ResUNet 模型路徑: {path}')
         if os.path.exists(path):
-            logger.info(f'找到 ResUNet 模型: {path}')
+            #logger.info(f'找到 ResUNet 模型: {path}')
             return path
             
-    logger.error('找不到 ResUNet 模型檔案')
+    #logger.error('找不到 ResUNet 模型檔案')
     return None
 
 # 確保 sys.stderr 存在
@@ -409,7 +417,7 @@ class DCM_DATA_LIST:
             self.masked_images = [np.where(mask == 0, 0, img) 
                                 for img, mask in zip(self.img_list, self.segmentation_3d)]
         except Exception as e:
-            logger.error(f"肺部分割失敗: {e}")
+            #logger.error(f"肺部分割失敗: {e}")
             self.masked_images = self.img_list
             self.segmentation_3d = [np.ones_like(img) for img in self.img_list]
 
@@ -497,7 +505,8 @@ class LDCT_predict:
         if self.model_path is None:
             raise RuntimeError("無法找到 ResUNet 模型檔案")
         
-        logger.info(f'使用 ResUNet 模型: {self.model_path}')
+        #logger.info(f'使用 ResUNet 模型: {self.model_path}')
+        print(f'使用 ResUNet 模型: {self.model_path}')
         
         # 載入 ResUNet 模型
         self.model = resunet(input_size=(176, 176, 1))
@@ -588,55 +597,61 @@ class LDCT_predict:
                 out[(case_key, z)].append([int(z), int(x1), int(y1), int(x2-x1), int(y2-y1), float(conf)])
         return out
 
+    
     def link_across_slices(self, slice_nodules_dict):
-        """跨切片連結檢測結果"""
-        clusters = []
+        before_clusters = []
+        clusters = []  # 每顆結節：{'case':..., 'zs':[], 'boxes':[], 'max_conf':..., 'rep':(z,x1,y1,w,h,conf)}
+        # 先按 case 分組，再按 z 遞增
         by_case = defaultdict(list)
         for (case_key, z), boxes in slice_nodules_dict.items():
             for b in boxes:
-                z_i, x1, y1, w, h, conf = b
+                z_i,x1,y1,w,h,conf = b
                 by_case[case_key].append((int(z_i), int(x1), int(y1), int(w), int(h), float(conf)))
         
         for case_key, items in by_case.items():
+            # 按 z 再按 conf 排序
             items.sort(key=lambda t: (t[0], -t[5]))
-            tracks = []
-            for z, x1, y1, w, h, conf in items:
-                x2, y2 = x1+w, y1+h
-                cx, cy = 0.5*(x1+x2), 0.5*(y1+y2)
+            tracks = []  # 每個 track: {'last_z':, 'last_box':(x1,y1,x2,y2), 'zs':[], 'boxes':[], 'max_conf':}
+            for z,x1,y1,w,h,conf in items:
+                x2,y2 = x1+w, y1+h
+                cx,cy = 0.5*(x1+x2), 0.5*(y1+y2)
                 placed = False
-                best_i = -1
-                best_cost = 1e9
-                for i, tr in enumerate(tracks):
+                # 嘗試接到最近的一條軌
+                best_i = -1; best_cost = 1e9
+                for i,tr in enumerate(tracks):
                     if abs(z - tr['last_z']) > MAX_Z_GAP:
                         continue
-                    tcx, tcy = self.center_xyxy(tr['last_box'])
+                    tcx,tcy = self.center_xyxy(tr['last_box'])
                     dz = abs(z - tr['last_z'])
                     dxy = np.hypot(cx - tcx, cy - tcy)
                     if dxy <= CENTER_THR_PX:
-                        cost = dxy + 5*dz
+                        cost = dxy + 5*dz  # 簡單代價：平衡 xy 與 z
                         if cost < best_cost:
-                            best_cost = cost
-                            best_i = i
+                            best_cost = cost; best_i = i
                 if best_i >= 0:
                     tr = tracks[best_i]
                     tr['last_z'] = z
-                    tr['last_box'] = (x1, y1, x2, y2)
+                    tr['last_box'] = (x1,y1,x2,y2)
                     tr['zs'].append(z)
-                    tr['boxes'].append((z, x1, y1, w, h, conf))
+                    tr['boxes'].append((z,x1,y1,w,h,conf))
                     tr['max_conf'] = max(tr['max_conf'], conf)
                     placed = True
                 if not placed:
                     tracks.append(dict(
-                        last_z=z, last_box=(x1, y1, x2, y2),
-                        zs=[z], boxes=[(z, x1, y1, w, h, conf)], max_conf=conf
+                        case=case_key,last_z=z, last_box=(x1,y1,x2,y2),
+                        zs=[z], boxes=[(z,x1,y1,w,h,conf)], max_conf=conf
                     ))
+            # 濾掉太短的軌（只在 1 片出現的）
             for tr in tracks:
+                before_clusters.append(dict(case=case_key, zs=tr['zs'], boxes=tr['boxes'],
+                        max_conf=tr['max_conf'] ))
                 if len(tr['zs']) < MIN_SLICE_LEN:
                     continue
+                # 代表框：取 conf 最大的那一片
                 rep = max(tr['boxes'], key=lambda b: b[-1])
                 clusters.append(dict(case=case_key, zs=tr['zs'], boxes=tr['boxes'],
-                                   max_conf=tr['max_conf'], rep=rep))
-        return clusters
+                                    max_conf=tr['max_conf'], rep=rep))
+        return before_clusters , clusters
     
 
 
@@ -723,31 +738,34 @@ class LDCT_predict:
             
             # 後處理
             slice_nodules_nms = self.per_slice_nms(self.slice_nodules)
-            clusters = self.link_across_slices(slice_nodules_nms)
+            clusters , _ = self.link_across_slices(slice_nodules_nms)
             
+            print(clusters)
             # 轉換為原始格式
             predict_class = []
             predict_prob = []
             predict_coord = []
             
             for cluster in clusters:
-                rep = cluster['rep']
-                z, x1, y1, w, h, conf = rep
-                predict_class.append(1)  # 檢測到結節
-                predict_prob.append(conf)
-                predict_coord.append({
-                    'filepath': filename_list[min(z, len(filename_list)-1)],
-                    'xmin': x1,
-                    'ymin': y1,
-                    'xmax': x1 + w,
-                    'ymax': y1 + h,
-                    'confidence': conf,
-                    'class': 0,
-                    'name': 'nodule'
-                })
+                nodules = cluster['boxes']
+                for rep in nodules :
+                    z, x1, y1, w, h, conf = rep
+                    predict_class.append(1)  # 檢測到結節
+                    predict_prob.append(conf)
+                    predict_coord.append({
+                        'filepath': filename_list[min(z, len(filename_list)-1)],
+                        'xmin': x1,
+                        'ymin': y1,
+                        'xmax': x1 + w,
+                        'ymax': y1 + h,
+                        'confidence': conf,
+                        'class': 0,
+                        'name': 'nodule'
+                    })
             
             end_time = time.time()
-            logger.info(f"ResUNet 預測時間: {end_time - start_time} 秒")
+            #logger.info(f"ResUNet 預測時間: {end_time - start_time} 秒")
+            print(f"ResUNet 預測時間: {end_time - start_time} 秒")
                 
             # 整理結果
             result = {
@@ -759,9 +777,20 @@ class LDCT_predict:
             return result
             
         except Exception as e:
-            logger.error(f"預測過程中發生錯誤: {e}")
+            #logger.error(f"預測過程中發生錯誤: {e}")
             return {
                 "predict_class": [],
                 "predict_prob": [],
                 "predict_coord": []
             }
+if __name__ == "__main__":
+    # 測試 LDCT_predict 類別
+    test_case_dir = r"D:\Daniel\for_git\LDCT_git\5407878_20240125"  # 替換為實際的 DICOM series 路徑
+    dicom_files = [os.path.join(test_case_dir, f) for f in os.listdir(test_case_dir) if f.endswith('.dcm')]
+    
+    predictor = LDCT_predict()
+    #results = predictor.predict(dicom_files)#17
+    results = predictor.predict(dicom_files)#25
+    
+    print("預測結果:")
+    print(results)
