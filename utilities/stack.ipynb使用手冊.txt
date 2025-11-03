@@ -1,0 +1,14 @@
+使用stack.ipynb
+
+1.將needlabel/CT 內的dicom疊加k張，輸出至stack_needlable/CT 資料夾中。
+
+2.將stacked_needlable/CT 批次壓縮 至將stacked_needlable/CT_zips/
+
+3.將壓縮檔案用API批次上傳CVAT
+
+
+----------------------------------------------------------------------------------
+new_dataset_0812為0811 Karen新增的資料集，內有22份新增的data with annotation。
+
+8/12 : needlabel內已包含new_dataset_0812。
+
