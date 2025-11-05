@@ -785,6 +785,7 @@ class LDCT_predict:
             }
 if __name__ == "__main__":
     # 測試 LDCT_predict 類別
+    time99=time.time()
     test_case_dir = r"D:\Daniel\for_git\LDCT_git\5407878_20240125"  # 替換為實際的 DICOM series 路徑
     dicom_files = [os.path.join(test_case_dir, f) for f in os.listdir(test_case_dir) if f.endswith('.dcm')]
     
@@ -794,3 +795,4 @@ if __name__ == "__main__":
     
     print("預測結果:")
     print(results)
+    print("總時間:",time.time()-time99)
